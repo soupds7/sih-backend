@@ -11,37 +11,20 @@ app.use(cors());
 
 // POST /chat/message
 app.post('/chat/message', async (req, res) => {
-  const { userId, text } = req.body;
-  if (!userId || !text) return res.status(400).json({ error: 'userId and text required' });
+  const { userId, text, sender } = req.body;
+  if (!userId || !text || !sender) return res.status(400).json({ error: 'userId, text, and sender required' });
 
-  // 1. Save user message
   let chat = await ChatModel.findOne({ userId });
   if (!chat) chat = new ChatModel({ userId, messages: [] });
-  chat.messages.push({ sender: 'user', text });
+
+  // Add senderId for bot if needed
+  const messageObj = { sender, text };
+  if (sender === 'bot') messageObj.senderId = 'bot_001';
+  else messageObj.senderId = userId;
+
+  chat.messages.push(messageObj);
   await chat.save();
 
-  // 2. Call n8n webhook for AI reply
-  let botReply = "No reply";
-  try {
-    const n8nRes = await axios.post('https://dsense.app.n8n.cloud/webhook/register', { message: text });
-    // Adjust this line based on your n8n response structure:
-    botReply =
-      (n8nRes.data.data &&
-        n8nRes.data.data[0] &&
-        n8nRes.data.data[0].json &&
-        n8nRes.data.data[0].json.output) ||
-      n8nRes.data.reply ||
-      n8nRes.data.output ||
-      "No reply";
-  } catch (err) {
-    botReply = "Bot is unavailable.";
-  }
-
-  // 3. Save bot reply
-  chat.messages.push({ sender: 'bot', text: botReply });
-  await chat.save();
-
-  // 4. Return updated messages
   res.json({ messages: chat.messages });
 });
 
