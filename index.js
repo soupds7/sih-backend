@@ -17,13 +17,31 @@ app.post('/chat/message', async (req, res) => {
   let chat = await ChatModel.findOne({ userId });
   if (!chat) chat = new ChatModel({ userId, messages: [] });
 
-  // Add senderId for bot if needed
+  // Save user message
   const messageObj = { sender, text };
   if (sender === 'bot') messageObj.senderId = 'bot_001';
   else messageObj.senderId = userId;
 
   chat.messages.push(messageObj);
   await chat.save();
+
+  // If the sender is user, call n8n and save bot reply
+  if (sender === 'user') {
+    try {
+      const n8nRes = await axios.post('https://dsense.app.n8n.cloud/webhook-test/register', {
+        message: text,
+        userId: userId
+      });
+      // Adjust this line based on your n8n response structure
+      const botReply = n8nRes.data.output || n8nRes.data.reply || '';
+      if (botReply) {
+        chat.messages.push({ sender: 'bot', text: botReply, senderId: 'bot_001' });
+        await chat.save();
+      }
+    } catch (err) {
+      // Optionally handle error, but don't save "No reply"
+    }
+  }
 
   res.json({ messages: chat.messages });
 });
@@ -39,3 +57,4 @@ const PORT = process.env.PORT || 5000;
 mongoose.connect(process.env.MONGO_URI)
   .then(() => app.listen(PORT, () => console.log(`Server running on port ${PORT}`)))
   .catch(err => console.error("MongoDB connection error:", err));
+
